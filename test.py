@@ -1,23 +1,16 @@
 import torch
 import torchaudio
-from datasets import load_dataset
 from jiwer import wer
 from tqdm import tqdm
 from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
-# Load datasets
-languages = {"en": "english", "fr": "french", "ar": "arabic"}
+from dataset import get_samples_per_language
 
-# Load Common Voice samples for each language
-samples_per_lang = {}
-for lang_code in languages:
-    dataset = load_dataset(
-        "mozilla-foundation/common_voice_13_0", lang_code, split="test"
-    )
-    filtered = dataset.filter(lambda x: len(x["sentence"].split()) > 3).select(
-        range(10)
-    )  # Using 10 for speed
-    samples_per_lang[lang_code] = filtered
+# Load datasets
+languages = ["en", "fr", "ar"]
+
+
+samples_per_lang = get_samples_per_language(languages=["fr"])
 
 # Load Whisper model and processor (use base for benchmarking, adjust for tiny or others)
 model_name = "openai/whisper-base"
@@ -32,10 +25,12 @@ model.to(device)
 # Resampler to convert to 16kHz mono
 resampler = torchaudio.transforms.Resample(orig_freq=48000, new_freq=16000)
 
+language_names = {"en": "English", "fr": "French", "ar": "Arabic"}
+
 results = {}
 
 for lang_code, samples in samples_per_lang.items():
-    print(f"\nBenchmarking {languages[lang_code].capitalize()}...")
+    print(f"\nBenchmarking {lang_code}...")
     language_wer = []
 
     for sample in tqdm(samples):
@@ -66,6 +61,6 @@ for lang_code, samples in samples_per_lang.items():
         language_wer.append(error)
 
     avg_wer = sum(language_wer) / len(language_wer)
-    results[lang_code] = {"language": languages[lang_code], "avg_wer": avg_wer}
+    results[lang_code] = {"language": language_names[lang_code], "avg_wer": avg_wer}
 
-results
+print(results)

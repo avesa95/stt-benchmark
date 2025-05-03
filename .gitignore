@@ -123,3 +123,8 @@ config.yaml
 /summary_index
 *.json
 *.csv
+
+# whisper.cpp
+whisper.cpp/
+
+

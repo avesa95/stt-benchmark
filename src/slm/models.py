@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
 import ollama
 
+import ollama
 
-# Base SLM Model class
+
 class SLMModel(ABC):
     def __init__(self, name: str):
         self.name = name
@@ -31,19 +32,16 @@ class OllamaSLM(SLMModel):
 
 
 class QwenModel(OllamaSLM):
-    def __init__(self, temperature: float = 0.3):
-        super().__init__(model_name="qwen", temperature=temperature)
+    def __init__(self, temperature: float = 0.3, model_name: str = "qwen:4b"):
+        super().__init__(model_name=model_name, temperature=temperature)
 
 
 class GemmaModel(OllamaSLM):
     def __init__(self, temperature: float = 0.3):
-        super().__init__(model_name="gemma", temperature=temperature)
+        super().__init__(model_name="gemma:2b", temperature=temperature)
 
 
 if __name__ == "__main__":
-    slm = QwenModel()
-    print("Qwen output:\n", slm.complete("Fix the grammar: he go to school every day"))
-
     slm = GemmaModel()
     print(
         "Gemma output:\n",

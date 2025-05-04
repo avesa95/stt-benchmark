@@ -128,3 +128,4 @@ config.yaml
 whisper.cpp/
 
 
+.env.example

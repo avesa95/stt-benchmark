@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
+import numpy as np
 
 import torch
+import whisperx
 from pywhispercpp.model import Model as WhisperCppModel
 from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
@@ -50,3 +52,22 @@ class WhisperCpp(STTModel):
         )
         # Join all segment texts into a single string
         return " ".join(segment.text for segment in segments).strip()
+
+
+class WhisperX(STTModel):
+    def __init__(
+        self, 
+        model_id="openai/whisper-tiny", 
+        device="cpu", 
+        compute_type="int8"
+    ):
+        super().__init__(name=model_id.split("/")[-1])
+        self.model = whisperx.load_model(model_id, device, compute_type)
+
+    def transcribe(
+        self, 
+        audio: np.ndarray, 
+        batch_size: int = 4
+    ) -> str:
+        result = self.model.transcribe(audio, batch_size=batch_size)
+        return " ".join(segment.get("text") for segment in result["segments"]).strip()

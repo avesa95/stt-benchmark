@@ -4,6 +4,7 @@ import wave
 import subprocess
 import sys
 import json
+import torchaudio
 
 import torch
 import whisperx
@@ -18,7 +19,7 @@ class STTModel(ABC):
         self.name = name
 
     @abstractmethod
-    def transcribe(self, audio_tensor: torch.Tensor) -> str:
+    def transcribe(self, audio_path: str) -> str:
         pass
 
 
@@ -30,12 +31,24 @@ class WhisperOpenAIModel(STTModel):
         self.model = WhisperForConditionalGeneration.from_pretrained(model_id).to(
             device
         )
+        self.resampler = torchaudio.transforms.Resample(orig_freq=48000, new_freq=16000)
         self.device = device
         self.model.eval()
 
-    def transcribe(self, audio_tensor: torch.Tensor) -> str:
+    def transcribe(self, audio_path: str) -> str:
+
+        # Load audio
+        waveform, sr = torchaudio.load(audio_path)
+        if sr != 16000:
+            waveform = self.resampler(waveform)
+
+        # Mono channel
+        if waveform.shape[0] > 1:
+            waveform = torch.mean(waveform, dim=0, keepdim=True)
+
+
         input_features = self.processor(
-            audio_tensor.squeeze(), sampling_rate=16000, return_tensors="pt"
+            waveform.squeeze(), sampling_rate=16000, return_tensors="pt"
         ).input_features.to(self.device)
         with torch.no_grad():
             predicted_ids = self.model.generate(input_features)
@@ -60,6 +73,7 @@ class WhisperCpp(STTModel):
 
 
 class WhisperX(STTModel):
+
     def __init__(
         self, 
         model_id: str = "tiny", 
@@ -71,16 +85,27 @@ class WhisperX(STTModel):
 
     def transcribe(
         self, 
-        audio: np.ndarray, 
+        audio_path: str, 
         batch_size: int = 4
     ) -> str:
+        audio = whisperx.load_audio(audio_path)
         result = self.model.transcribe(audio, batch_size=batch_size)
         return " ".join(segment.get("text") for segment in result["segments"]).strip()
 
 
 class Vosk(STTModel):
+
+    model_per_language = {
+        "en": "vosk-model-small-en-us-0.15",
+        "fr": "vosk-model-small-fr-0.22",
+        "ar": "vosk-model-ar-mgb2-0.4",
+        "de": "vosk-model-small-de-0.15",
+        "it": "vosk-model-small-it-0.22",
+        "es": "vosk-model-small-es-0.42"
+    }
     
-    def __init__(self, model_id: str = "vosk-model-small-en-us-0.15"):
+    def __init__(self, language: str = "en"):
+        model_id = self.model_per_language[language]
         super().__init__(name=model_id)
         self.model = VoskModel(model_name=model_id)
 

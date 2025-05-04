@@ -1,7 +1,9 @@
+import os
 from datasets import load_dataset
 
 
-def get_samples_per_language(languages=None, num_samples=10, min_words=3):
+
+def get_samples_per_language(languages=None, num_samples=20, min_words=3):
     """
     Loads Common Voice samples for each language and returns a dictionary
     mapping language codes to filtered datasets.
@@ -20,7 +22,7 @@ def get_samples_per_language(languages=None, num_samples=10, min_words=3):
     samples_per_lang = {}
     for lang_code in languages:
         dataset = load_dataset(
-            "mozilla-foundation/common_voice_13_0", lang_code, split="test"
+            "mozilla-foundation/common_voice_13_0", lang_code, split="test", token=os.getenv("HUGGINGFACE_TOKEN")
         )
         filtered = dataset.filter(
             lambda x: len(x["sentence"].split()) > min_words
@@ -30,5 +32,5 @@ def get_samples_per_language(languages=None, num_samples=10, min_words=3):
 
 
 if __name__ == "__main__":
-    samples_per_lang = get_samples_per_language(languages=["fr"])
+    samples_per_lang = get_samples_per_language(languages=["en", "fr", "de", "it", "ar", "es"])
     print(samples_per_lang)

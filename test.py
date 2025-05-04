@@ -4,7 +4,7 @@ from jiwer import wer
 from tqdm import tqdm
 from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
-from dataset import get_samples_per_language
+from stt.dataset import get_samples_per_language
 
 # Load datasets
 languages = ["en", "fr", "ar"]

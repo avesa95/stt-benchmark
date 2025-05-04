@@ -1,9 +1,14 @@
 from abc import ABC, abstractmethod
 import numpy as np
+import wave
+import subprocess
+import sys
+import json
 
 import torch
 import whisperx
 from pywhispercpp.model import Model as WhisperCppModel
+from vosk import Model as VoskModel, KaldiRecognizer, SetLogLevel
 from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
 
@@ -57,12 +62,12 @@ class WhisperCpp(STTModel):
 class WhisperX(STTModel):
     def __init__(
         self, 
-        model_id="openai/whisper-tiny", 
-        device="cpu", 
-        compute_type="int8"
+        model_id: str = "tiny", 
+        device: str = "cpu", 
+        compute_type: str = "int8"
     ):
-        super().__init__(name=model_id.split("/")[-1])
-        self.model = whisperx.load_model(model_id, device, compute_type)
+        super().__init__(name=model_id)
+        self.model = whisperx.load_model(model_id, device, compute_type=compute_type)
 
     def transcribe(
         self, 
@@ -71,3 +76,49 @@ class WhisperX(STTModel):
     ) -> str:
         result = self.model.transcribe(audio, batch_size=batch_size)
         return " ".join(segment.get("text") for segment in result["segments"]).strip()
+
+
+class Vosk(STTModel):
+    
+    def __init__(self, model_id: str = "vosk-model-small-en-us-0.15"):
+        super().__init__(name=model_id)
+        self.model = VoskModel(model_name=model_id)
+
+    def transcribe(
+        self, 
+        model_path: str,
+        sample_rate: int = 16000
+    ) -> str:
+        
+        SetLogLevel(0)
+
+        # wf = wave.open(model_path, "rb")
+        # if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getcomptype() != "NONE":
+        #     raise ValueError("Audio file must be WAV format mono PCM.")
+
+        rec = KaldiRecognizer(self.model, sample_rate)
+        # rec.SetWords(True)
+        # rec.SetPartialWords(True)
+
+
+        with subprocess.Popen(["ffmpeg", "-loglevel", "quiet", "-i", model_path,
+                            "-ar", str(sample_rate) , "-ac", "1", "-f", "s16le", "-"],
+                            stdout=subprocess.PIPE) as process:
+
+            while True:
+                data = process.stdout.read(4000)
+                if len(data) == 0:
+                    break
+                if rec.AcceptWaveform(data):
+                    rec.Result()
+                else:
+                    rec.PartialResult()
+
+            result = json.loads(rec.FinalResult())
+            return result.get("text", "")
+
+if __name__ == "__main__":
+    model = Vosk("vosk-model-small-en-us-0.15")
+
+    # audio = whisperx.load_audio("/Users/ristoc/Workspaces/cube/stt-benchmark/data/M18_05_01.wav")
+    print(model.transcribe("/Users/ristoc/Workspaces/cube/stt-benchmark/data/M18_05_01.wav"))

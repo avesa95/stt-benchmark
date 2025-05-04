@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import ollama
 
 
 # Base SLM Model class

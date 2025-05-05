@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-import ollama
 
 import ollama
 
@@ -21,12 +20,21 @@ class OllamaSLM(SLMModel):
 
     def complete(self, prompt: str) -> str:
         try:
-            response = ollama.chat(
+            # response = ollama.generate(
+            #     model=self.model_name,
+            #     messages=[{"role": "user", "content": prompt}],
+            #     options={"temperature": self.temperature},
+            # )
+            response = ollama.generate(
                 model=self.model_name,
-                messages=[{"role": "user", "content": prompt}],
-                options={"temperature": self.temperature},
+                prompt=prompt,
+                options={
+                    "temperature": self.temperature,
+                    "stop": ["\nInput:", "\n---", "\nOutput:"],
+                },
             )
-            return response["message"]["content"].strip()
+            return response["response"]
+            # return response["message"]["content"].strip()
         except Exception as e:
             return f"[ERROR] {e}"
 
@@ -37,8 +45,8 @@ class QwenModel(OllamaSLM):
 
 
 class GemmaModel(OllamaSLM):
-    def __init__(self, temperature: float = 0.3):
-        super().__init__(model_name="gemma:2b", temperature=temperature)
+    def __init__(self, temperature: float = 0.3, model_name: str = "gemma:2b"):
+        super().__init__(model_name=model_name, temperature=temperature)
 
 
 if __name__ == "__main__":

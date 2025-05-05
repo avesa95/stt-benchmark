@@ -1,19 +1,25 @@
+from math import floor
 import torch
 import torchaudio
-from jiwer import wer
+from jiwer import wer, cer
 from tqdm import tqdm
 from transformers import WhisperForConditionalGeneration, WhisperProcessor
+import wave
+import ffmpeg
+
+import csv
+from datetime import datetime
+import time
 
 import whisperx
 from src.stt.dataset import get_samples_per_language
-from src.stt.models import WhisperOpenAIModel, WhisperX, Vosk
+from src.stt.models import WhisperOpenAIModel, WhisperX, Vosk, WhisperCpp
 
 # Load datasets
-languages = ["en", "fr", "ar", "de", "it", "es"]
-languages = ["es"]
+# languages = ["en", "fr", "ar", "de", "it", "es"]
+languages = ["en"]
 
-
-samples_per_lang = get_samples_per_language(languages=languages)
+samples_per_lang = get_samples_per_language(languages=languages, num_samples=10)
 
 # # Load Whisper model and processor (use base for benchmarking, adjust for tiny or others)
 # model_name = "openai/whisper-base"
@@ -24,11 +30,6 @@ samples_per_lang = get_samples_per_language(languages=languages)
 # # Prepare device
 # device = "cuda" if torch.cuda.is_available() else "cpu"
 # model.to(device)
-
-model = WhisperOpenAIModel()
-# whispe_x_model = WhisperX()
-# Resampler to convert to 16kHz mono
-resampler = torchaudio.transforms.Resample(orig_freq=48000, new_freq=16000)
 
 language_names = {
     "en": "English",
@@ -42,32 +43,62 @@ language_names = {
 results = {}
 
 for lang_code, samples in samples_per_lang.items():
-    vosk_model = Vosk(lang_code)
-    print(f"\nBenchmarking {lang_code} over {len(samples)} samples...")
-    language_wer = []
+    model = WhisperCpp("tiny.en", language=lang_code)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    csv_filename = f"test/whisper_cpp_{lang_code}_benchmark_results_{timestamp}.csv"
 
-    for sample in tqdm(samples):
-        audio_path = sample["path"]
-        ground_truth = sample["sentence"]
+    # model = WhisperX(language=lang_code)
 
-        # # Load audio
-        # waveform, sr = torchaudio.load(audio_path)
-        # if sr != 16000:
-        #     waveform = resampler(waveform)
+    with open(csv_filename, 'w', newline='') as csvfile:
+        fieldnames = ['Ground Truth', 'Transcription', 'WER', 'CER', 'Processing Time', 'Audio Duration', 'RTF']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        
+        writer.writeheader()
 
-        # # Mono channel
-        # if waveform.shape[0] > 1:
-        #     waveform = torch.mean(waveform, dim=0, keepdim=True)
+        shuffled_samples= samples.shuffle(seed=42)
+        print(f"\nBenchmarking {lang_code} over {len(samples)} samples...")
 
-        # transcription = model.transcribe(waveform)
-        transcription = vosk_model.transcribe(audio_path)
-        print(transcription)
+        language_wer = []
+        language_rtf = []
+        language_cer = []
 
-        # Evaluate
-        error = wer(ground_truth.lower(), transcription.lower())
-        language_wer.append(error)
+        for sample in tqdm(shuffled_samples):
+            audio_path = sample["path"]
+            ground_truth = sample["sentence"]
+
+            probe = ffmpeg.probe(audio_path)
+            audio_duration = floor(float(probe['format']['duration']))
+
+            start_time = time.time()
+            transcription = model.transcribe(audio_path)
+            processing_time = time.time() - start_time
+
+            # Evaluate
+            word_error = wer(ground_truth.lower(), transcription.lower())
+            char_error = cer(ground_truth.lower(), transcription.lower())
+            language_wer.append(word_error)
+            language_rtf.append(processing_time / audio_duration)
+            language_cer.append(char_error)
+
+            writer.writerow({
+                'Ground Truth': ground_truth,
+                'Transcription': transcription,
+                'WER': word_error,
+                'CER': char_error,
+                'Processing Time': processing_time,
+                'Audio Duration': audio_duration,
+                'RTF': processing_time / audio_duration
+            })
+
+        print(f"\nResults saved to {csv_filename}")
 
     avg_wer = sum(language_wer) / len(language_wer)
-    results[lang_code] = {"language": language_names[lang_code], "avg_wer": avg_wer}
+    avg_rtf = sum(language_rtf) / len(language_rtf)
+    results[lang_code] = {
+        "language": language_names[lang_code], 
+        "avg_wer": avg_wer, 
+        "avg_cer": sum(language_cer) / len(language_cer),
+        "avg_rtf": avg_rtf
+    }
 
 print(results)

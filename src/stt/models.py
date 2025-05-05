@@ -1,10 +1,15 @@
 from abc import ABC, abstractmethod
+from tabnanny import verbose
 import numpy as np
 import wave
 import subprocess
 import sys
 import json
 import torchaudio
+import time
+import ffmpeg
+import tempfile
+import logging
 
 import torch
 import whisperx
@@ -17,10 +22,23 @@ from transformers import WhisperForConditionalGeneration, WhisperProcessor
 class STTModel(ABC):
     def __init__(self, name):
         self.name = name
+        self.resampler = torchaudio.transforms.Resample(orig_freq=48000, new_freq=16000)
+
 
     @abstractmethod
     def transcribe(self, audio_path: str) -> str:
         pass
+
+    def _preprocess_audio(self, audio_path: str) -> str:
+        waveform, sr = torchaudio.load(audio_path)
+
+        if waveform.shape[0] > 1:
+            waveform = torch.mean(waveform, dim=0, keepdim=True)
+
+        if sr != 16000:
+            waveform = self.resampler(waveform)
+
+        return waveform.numpy()
 
 
 # Whisper (transformers) model wrapper
@@ -50,6 +68,7 @@ class WhisperOpenAIModel(STTModel):
         input_features = self.processor(
             waveform.squeeze(), sampling_rate=16000, return_tensors="pt"
         ).input_features.to(self.device)
+
         with torch.no_grad():
             predicted_ids = self.model.generate(input_features)
         return self.processor.batch_decode(predicted_ids, skip_special_tokens=True)[
@@ -59,17 +78,39 @@ class WhisperOpenAIModel(STTModel):
 
 # Placeholder: whisper.cpp model (run subprocess or binding)
 class WhisperCpp(STTModel):
-    def __init__(self, model_path):
+    def __init__(self, model_path, language="en"):
         super().__init__(name="whisper.cpp")
-        self.model = WhisperCppModel(model_path)
+        self.model = WhisperCppModel(
+            model_path,
+            language=language,
+            split_on_word=True
+        )
+
 
     def transcribe(self, audio_path: str, print_progress: bool = False) -> str:
-        segments = self.model.transcribe(
-            audio_path,
-            print_progress=print_progress,
-        )
-        # Join all segment texts into a single string
-        return " ".join(segment.text for segment in segments).strip()
+    
+        waveform, sample_rate = torchaudio.load(audio_path)
+        # Convert to mono if needed
+        if waveform.shape[0] > 1:
+            waveform = waveform.mean(dim=0, keepdim=True)
+        
+        # Resample to 16kHz if needed
+        if sample_rate != 16000:
+            waveform = self.resampler(waveform)
+        
+        # Save as 16-bit PCM WAV for whisper.cpp
+        with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
+            processed_audio_path = tmp.name
+            torchaudio.save(
+                processed_audio_path, waveform, 16000, encoding="PCM_S", bits_per_sample=16
+            )
+        
+            segments = self.model.transcribe(
+                processed_audio_path,
+                print_progress=print_progress,
+            )
+            # Join all segment texts into a single string
+            return " ".join(segment.text for segment in segments).strip()
 
 
 class WhisperX(STTModel):
@@ -78,10 +119,11 @@ class WhisperX(STTModel):
         self, 
         model_id: str = "tiny", 
         device: str = "cpu", 
-        compute_type: str = "int8"
+        compute_type: str = "int8",
+        language: str = "en"
     ):
         super().__init__(name=model_id)
-        self.model = whisperx.load_model(model_id, device, compute_type=compute_type)
+        self.model = whisperx.load_model(model_id, device, compute_type=compute_type, language=language)
 
     def transcribe(
         self, 
@@ -142,8 +184,9 @@ class Vosk(STTModel):
             result = json.loads(rec.FinalResult())
             return result.get("text", "")
 
-if __name__ == "__main__":
-    model = Vosk("vosk-model-small-en-us-0.15")
 
-    # audio = whisperx.load_audio("/Users/ristoc/Workspaces/cube/stt-benchmark/data/M18_05_01.wav")
-    print(model.transcribe("/Users/ristoc/Workspaces/cube/stt-benchmark/data/M18_05_01.wav"))
+if __name__ == "__main__":
+    model = WhisperCpp("tiny", "en")
+
+    # # audio = whisperx.load_audio("/Users/ristoc/Workspaces/cube/stt-benchmark/data/M18_05_01.wav")
+    # print(model.transcribe_with_rtf("/Users/ristoc/Workspaces/cube/stt-benchmark/data/M18_05_01.wav"))

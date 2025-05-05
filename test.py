@@ -38,7 +38,7 @@ language_names = {
 results = {}
 
 for lang_code, samples in samples_per_lang.items():
-    model = WhisperCpp("tiny.en", language=lang_code)
+    model = WhisperCpp("/Users/ristoc/Workspaces/cube/stt-benchmark/whisper.cpp/models/ggml-tiny-q5_1.bin", language=lang_code)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     csv_filename = f"test/whisper_cpp_{lang_code}_benchmark_results_{timestamp}.csv"
 

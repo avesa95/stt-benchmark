@@ -74,32 +74,32 @@ class WhisperCpp(STTModel):
         self.model = WhisperCppModel(model_path, language=language, split_on_word=True)
 
     def transcribe(self, audio_path: str, print_progress: bool = False) -> str:
-        waveform, sample_rate = torchaudio.load(audio_path)
-        # Convert to mono if needed
-        if waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)
+        # waveform, sample_rate = torchaudio.load(audio_path)
+        # # Convert to mono if needed
+        # if waveform.shape[0] > 1:
+        #     waveform = waveform.mean(dim=0, keepdim=True)
 
-        # Resample to 16kHz if needed
-        if sample_rate != 16000:
-            waveform = self.resampler(waveform)
+        # # Resample to 16kHz if needed
+        # if sample_rate != 16000:
+        #     waveform = self.resampler(waveform)
 
-        # Save as 16-bit PCM WAV for whisper.cpp
-        with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
-            processed_audio_path = tmp.name
-            torchaudio.save(
-                processed_audio_path,
-                waveform,
-                16000,
-                encoding="PCM_S",
-                bits_per_sample=16,
-            )
+        # # Save as 16-bit PCM WAV for whisper.cpp
+        # with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
+        #     processed_audio_path = tmp.name
+        #     torchaudio.save(
+        #         processed_audio_path,
+        #         waveform,
+        #         16000,
+        #         encoding="PCM_S",
+        #         bits_per_sample=16,
+        #     )
 
-            segments = self.model.transcribe(
-                processed_audio_path,
-                print_progress=print_progress,
-            )
-            # Join all segment texts into a single string
-            return " ".join(segment.text for segment in segments).strip()
+        segments = self.model.transcribe(
+            audio_path,
+            print_progress=print_progress,
+        )
+        # Join all segment texts into a single string
+        return " ".join(segment.text for segment in segments).strip()
 
 
 class WhisperX(STTModel):

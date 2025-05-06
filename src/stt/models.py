@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import tempfile
 from abc import ABC, abstractmethod
@@ -65,38 +66,83 @@ class WhisperOpenAIModel(STTModel):
         return self.processor.batch_decode(predicted_ids, skip_special_tokens=True)[
             0
         ].strip()
+    
+
+class WhisperCpp(STTModel):
+    def __init__(self, model_path, language="auto"):
+        super().__init__(name="whisper.cpp")
+        self.model_name = model_path
+        self.language = language
+
+    def transcribe(self, audio_path: str):
+        """
+        Processes an audio file using a specified model and returns the processed string.
+
+        :param wav_file: Path to the WAV file
+        :param model_name: Name of the model to use
+        :return: Processed string output from the audio processing
+        :raises: Exception if an error occurs during processing
+        """
+
+        # Check if the file exists
+        if not os.path.exists(self.model_name):
+            raise FileNotFoundError(f"Model file not found: {self.model_name} \n\nDownload a model with this command:\n\n> bash ./models/download-ggml-model.sh {self.model_name}\n\n")
+
+        if not os.path.exists(audio_path):
+            raise FileNotFoundError(f"WAV file not found: {audio_path}")
+
+        waveform, sample_rate = torchaudio.load(audio_path)
+        # Convert to mono if needed
+        if waveform.shape[0] > 1:
+            waveform = waveform.mean(dim=0, keepdim=True)
+
+        # Resample to 16kHz if needed
+        if sample_rate != 16000:
+            waveform = self.resampler(waveform)
+
+        # Save as 16-bit PCM WAV for whisper.cpp
+        with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
+            processed_audio_path = tmp.name
+            torchaudio.save(
+                processed_audio_path,
+                waveform,
+                16000,
+                encoding="PCM_S",
+                bits_per_sample=16,
+            )
+
+            full_command = f"/Users/ristoc/Workspaces/cube/stt-benchmark/whisper.cpp/build/bin/whisper-cli -m {self.model_name} -f {processed_audio_path} -l {self.language} -nt"
+
+            # Execute the command
+            process = subprocess.Popen(full_command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+            # Get the output and error (if any)
+            output, error = process.communicate()
+            # print(error)
+
+            # if error:
+            #     raise Exception(f"Error processing audio: {error.decode('utf-8')}")
+
+            # Process and return the output string
+            decoded_str = output.decode('utf-8').strip()
+            processed_str = decoded_str.replace('[BLANK_AUDIO]', '').strip()
+
+            return processed_str
 
 
 # Placeholder: whisper.cpp model (run subprocess or binding)
-class WhisperCpp(STTModel):
-    def __init__(self, model_path, language="en"):
+class PyWhisperCpp(STTModel):
+    def __init__(self, model_path, language="auto"):
         super().__init__(name="whisper.cpp")
-        self.model = WhisperCppModel(model_path, language=language, split_on_word=True)
+        self.model = WhisperCppModel(model_path, split_on_word=True, translate=False)
+        self.language = language
 
     def transcribe(self, audio_path: str, print_progress: bool = False) -> str:
-        # waveform, sample_rate = torchaudio.load(audio_path)
-        # # Convert to mono if needed
-        # if waveform.shape[0] > 1:
-        #     waveform = waveform.mean(dim=0, keepdim=True)
-
-        # # Resample to 16kHz if needed
-        # if sample_rate != 16000:
-        #     waveform = self.resampler(waveform)
-
-        # # Save as 16-bit PCM WAV for whisper.cpp
-        # with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
-        #     processed_audio_path = tmp.name
-        #     torchaudio.save(
-        #         processed_audio_path,
-        #         waveform,
-        #         16000,
-        #         encoding="PCM_S",
-        #         bits_per_sample=16,
-        #     )
 
         segments = self.model.transcribe(
             audio_path,
             print_progress=print_progress,
+            language=self.language,
         )
         # Join all segment texts into a single string
         return " ".join(segment.text for segment in segments).strip()
@@ -178,7 +224,9 @@ class Vosk(STTModel):
 
 
 if __name__ == "__main__":
-    model = WhisperCpp("tiny", "en")
+    # model = WhisperCpp("tiny", "en")
+    model = WhisperCppRaw("/Users/ristoc/Workspaces/cube/stt-benchmark/whisper.cpp/models/ggml-medium-q8_0.bin", "en")
+    print(model.transcribe("/Users/ristoc/Workspaces/cube/stt-benchmark/data/M18_05_01.wav"))
 
     # # audio = whisperx.load_audio("/Users/ristoc/Workspaces/cube/stt-benchmark/data/M18_05_01.wav")
     # print(model.transcribe_with_rtf("/Users/ristoc/Workspaces/cube/stt-benchmark/data/M18_05_01.wav"))

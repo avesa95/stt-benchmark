@@ -6,15 +6,15 @@ from math import floor
 import ffmpeg
 from jiwer import cer, wer
 from tqdm import tqdm
+from whispercpp import Whisper
 
 from src.stt.dataset import get_samples_per_language
-from src.stt.models import WhisperCpp
+from src.stt.models import PyWhisperCpp, WhisperX, WhisperCpp
 
 # Load datasets
-# languages = ["en", "fr", "ar", "de", "it", "es"]
-languages = ["en"]
+languages = ["en", "fr", "ar", "de", "it", "es"]
 
-samples_per_lang = get_samples_per_language(languages=languages, num_samples=10)
+samples_per_lang = get_samples_per_language(languages=languages, num_samples=300)
 
 # # Load Whisper model and processor (use base for benchmarking, adjust for tiny or others)
 # model_name = "openai/whisper-base"
@@ -38,9 +38,9 @@ language_names = {
 results = {}
 
 for lang_code, samples in samples_per_lang.items():
-    model = WhisperCpp("/Users/ristoc/Workspaces/cube/stt-benchmark/whisper.cpp/models/ggml-tiny-q5_1.bin", language=lang_code)
+    model = PyWhisperCpp("/Users/ristoc/Workspaces/cube/stt-benchmark/whisper.cpp/models/ggml-medium-q5_0.bin", language=lang_code)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    csv_filename = f"test/whisper_cpp_{lang_code}_benchmark_results_{timestamp}.csv"
+    csv_filename = f"test/whisper_cpp_medium_q5_0_{lang_code}_benchmark_results_{timestamp}.csv"
 
     # model = WhisperX(language=lang_code)
 
